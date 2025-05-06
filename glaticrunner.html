@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">  
+<head>    
+  <meta charset="UTF-8" />    
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />    
+  <title>Galactic Runner - Virus Mode</title>    
+  <style>    
+    * { margin: 0; padding: 0; box-sizing: border-box; }  
+    body {  
+      background: black;  
+      overflow: hidden;  
+      color: white;  
+      font-family: sans-serif;  
+      text-align: center;  
+    }  
+    canvas {  
+      display: block;  
+      margin: 0 auto;  
+      background: linear-gradient(#000015, #000033);  
+      border: 2px solid #0ff;  
+    }  
+    #score, #highScore {  
+      position: absolute;  
+      top: 10px;  
+      font-size: 20px;  
+    }  
+    #score { left: 10px; }  
+    #highScore { right: 10px; }  
+    .controls {  
+      position: absolute;  
+      bottom: 20px;  
+      left: 50%;  
+      transform: translateX(-50%);  
+      display: flex;  
+      gap: 20px;  
+    }  
+    .btn {  
+      width: 60px;  
+      height: 60px;  
+      border-radius: 50%;  
+      background: #0ff;  
+      border: none;  
+      font-size: 30px;  
+      color: #000;  
+      font-weight: bold;  
+    }  
+    .btn::after {
+      content: "";
+    }
+    #okBtn {  
+      display: none;  
+      position: absolute;  
+      top: 50%;  
+      left: 50%;  
+      transform: translate(-50%, -50%);  
+      padding: 10px 20px;  
+      font-size: 20px;  
+      background: #0ff;  
+      border: none;  
+      border-radius: 10px;  
+      cursor: pointer;  
+    }  
+    .blink {
+      animation: blinkAnim 0.5s step-start infinite;
+    }
+    @keyframes blinkAnim {
+      50% { opacity: 0; }
+    }
+  </style>    
+</head>  
+<body>    
+  <div id="score">Score: 99999</div>    
+  <div id="highScore">High Score: 0</div>    
+  <canvas id="gameCanvas"></canvas>    
+  <div class="controls">    
+    <button class="btn" id="leftBtn"></button>    
+    <button class="btn" id="rightBtn"></button>    
+  </div>    
+  <button id="okBtn">OK</button>    
+  <audio id="explosionSound" src="https://www.soundjay.com/button/beep-07.wav"></audio>  
+  <script>    
+    const canvas = document.getElementById('gameCanvas');    
+    const ctx = canvas.getContext('2d');    
+    const spaceship = { x: 220, y: 480, width: 40, height: 40, speed: 2.3 };    
+    const obstacles = [];    
+    const stars = Array.from({ length: 100 }, () => ({  
+      x: Math.random() * window.innerWidth,  
+      y: Math.random() * window.innerHeight,  
+      radius: Math.random() * 2  
+    }));  
+    let score = 0;    
+    let highScore = localStorage.getItem('highScore') || 0;    
+    document.getElementById('highScore').textContent = 'High Score: ' + highScore;    
+    let gameOver = false;    
+    let leftPressed = false;    
+    let rightPressed = false;  
+    let lastBlinkScore = 0;
+    let blinking = false;
+
+    function resizeCanvas() {  
+      canvas.width = window.innerWidth;  
+      canvas.height = window.innerHeight;  
+      spaceship.x = canvas.width / 2 - spaceship.width / 2;  
+    }  
+    resizeCanvas();  
+    window.addEventListener('resize', resizeCanvas);  
+
+    document.addEventListener('keydown', (e) => {    
+      if (e.key === 'ArrowLeft') leftPressed = true;    
+      if (e.key === 'ArrowRight') rightPressed = true;    
+    });    
+    document.addEventListener('keyup', (e) => {    
+      if (e.key === 'ArrowLeft') leftPressed = false;    
+      if (e.key === 'ArrowRight') rightPressed = false;    
+    });    
+    document.getElementById('leftBtn').addEventListener('touchstart', () => leftPressed = true);  
+    document.getElementById('rightBtn').addEventListener('touchstart', () => rightPressed = true);  
+    document.getElementById('leftBtn').addEventListener('touchend', () => leftPressed = false);  
+    document.getElementById('rightBtn').addEventListener('touchend', () => rightPressed = false);  
+
+    function drawSpaceship() {  
+      ctx.fillStyle = '#0ff';  
+      ctx.beginPath();  
+      ctx.moveTo(spaceship.x + spaceship.width / 2, spaceship.y);  
+      ctx.lineTo(spaceship.x, spaceship.y + spaceship.height);  
+      ctx.lineTo(spaceship.x + spaceship.width, spaceship.y + spaceship.height);  
+      ctx.closePath();  
+      ctx.fill();  
+    }  
+
+    function drawObstacles() {  
+      ctx.fillStyle = '#f00';  
+      obstacles.forEach(obs => {  
+        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);  
+      });  
+    }  
+
+    function updateObstacles() {  
+      const speed = 3 + Math.floor(score / 15);  
+      for (let i = obstacles.length - 1; i >= 0; i--) {  
+        obstacles[i].y += speed;  
+        if (obstacles[i].y > canvas.height) {  
+          obstacles.splice(i, 1);  
+          score++;  
+          document.getElementById('score').textContent = 'Score: ' + score;
+
+          if (score % 20 === 0 && score !== lastBlinkScore && !blinking) {
+            blinking = true;
+            lastBlinkScore = score;
+            const scoreElement = document.getElementById('score');
+            scoreElement.classList.add('blink');
+            setTimeout(() => {
+              scoreElement.classList.remove('blink');
+              blinking = false;
+            }, 3000);
+          }
+        }  
+      }  
+      if (Math.random() < 0.02) {  
+        obstacles.push({ x: Math.random() * (canvas.width - 40), y: 0, width: 40, height: 40 });  
+      }  
+    }  
+
+    function checkCollision() {  
+      obstacles.forEach(obs => {  
+        if (  
+          spaceship.x < obs.x + obs.width &&  
+          spaceship.x + spaceship.width > obs.x &&  
+          spaceship.y < obs.y + obs.height &&  
+          spaceship.y + spaceship.height > obs.y  
+        ) {  
+          document.getElementById('explosionSound').play();  
+          gameOver = true;  
+        }  
+      });  
+    }  
+
+    function drawStars() {  
+      ctx.fillStyle = 'white';  
+      stars.forEach(star => {  
+        ctx.beginPath();  
+        ctx.arc(star.x, star.y, star.radius, 0, 2 * Math.PI);  
+        ctx.fill();  
+        star.y += 1;  
+        if (star.y > canvas.height) {  
+          star.y = 0;  
+          star.x = Math.random() * canvas.width;  
+        }  
+      });  
+    }  
+
+    function updateMovement() {  
+      if (leftPressed) spaceship.x -= spaceship.speed;  
+      if (rightPressed) spaceship.x += spaceship.speed;  
+      if (spaceship.x < 0) spaceship.x = 0;  
+      if (spaceship.x + spaceship.width > canvas.width) spaceship.x = canvas.width - spaceship.width;  
+    }  
+
+    function resetGame() {  
+      spaceship.x = canvas.width / 2 - spaceship.width / 2;  
+      score = 0;  
+      gameOver = false;  
+      obstacles.length = 0;  
+      document.getElementById('score').textContent = 'Score: 0';  
+      document.getElementById('okBtn').style.display = 'none';  
+      gameLoop();  
+    }  
+
+    document.getElementById('okBtn').addEventListener('click', resetGame);  
+
+    function gameLoop() {  
+      if (gameOver) {  
+        if (score > highScore) {  
+          highScore = score;  
+          localStorage.setItem('highScore', highScore);  
+          document.getElementById('highScore').textContent = 'High Score: ' + highScore;  
+        }  
+        ctx.fillStyle = 'white';  
+        ctx.font = '30px sans-serif';  
+        ctx.fillText('Game Over', canvas.width / 2 - 80, canvas.height / 2);  
+        document.getElementById('okBtn').style.display = 'block';  
+        return;  
+      }  
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);  
+      drawStars();  
+      updateMovement();  
+      drawSpaceship();  
+      drawObstacles();  
+      updateObstacles();  
+      checkCollision();  
+      requestAnimationFrame(gameLoop);  
+    }  
+
+    gameLoop();  
+  </script>    
+</body>    
+</html>
